@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nova — AI Voice Assistant</title>
+  <style>
+    :root { color-scheme: dark; --panel:#141b2b; --line:#29354d; --accent:#7c9cff; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:radial-gradient(circle at top,#202d4b,#090d16 65%); color:#f4f6ff; font:16px system-ui,-apple-system,Segoe UI,sans-serif; }
+    main { width:min(900px,94%); margin:0 auto; padding:28px 0 40px; }
+    header { text-align:center; padding:18px 0 22px; }
+    .orb { margin:0 auto 14px; width:82px;height:82px;border-radius:50%;background:radial-gradient(circle at 30% 25%,#fff,#9cb5ff 18%,#536ee8 48%,#222d72 75%);box-shadow:0 0 35px #637fff66; }
+    h1 { margin:0;font-size:clamp(28px,6vw,42px);letter-spacing:-1px; }
+    .sub { color:#aeb9d3;margin:8px 0 0; }
+    .card { background:#111827eF;border:1px solid var(--line);border-radius:20px;overflow:hidden;box-shadow:0 18px 55px #0005; }
+    .toolbar { display:flex; flex-wrap:wrap; gap:10px; padding:14px; border-bottom:1px solid var(--line); align-items:center; }
+    button { border:0; border-radius:12px; padding:11px 15px; color:#fff; background:#27344d; font-weight:650; cursor:pointer; }
+    button.primary { background:var(--accent);color:#071126; }
+    button:disabled { opacity:.55; cursor:wait; }
+    .status { color:#aeb9d3;font-size:14px;margin-left:auto; }
+    #chat { height:min(52vh,500px); min-height:280px; overflow:auto; padding:18px; display:flex; flex-direction:column; gap:12px; }
+    .bubble { max-width:88%; padding:12px 15px; border-radius:16px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; }
+    .user { align-self:flex-end;background:#314b8b; border-bottom-right-radius:5px; }
+    .assistant { align-self:flex-start;background:#202a3d;border:1px solid #303d55;border-bottom-left-radius:5px; }
+    .label { display:block;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#b9c7e8;margin-bottom:4px; }
+    form { padding:14px;display:flex;gap:10px;border-top:1px solid var(--line); }
+    input { min-width:0;flex:1;background:#0b1120;color:#fff;border:1px solid #35415a;border-radius:12px;padding:13px;font:inherit;outline:none; }
+    input:focus { border-color:var(--accent); }
+    .hint { padding:0 16px 16px;color:#9eabc6;font-size:13px; }
+    .small { font-size:12px;color:#9eabc6;text-align:center;margin-top:14px;line-height:1.6; }
+    @media(max-width:520px){ main{padding-top:12px}.status{width:100%;margin-left:0} #chat{height:50vh} .bubble{max-width:96%} }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="orb" aria-hidden="true"></div>
+    <h1>Nova AI</h1>
+    <p class="sub">Your voice-powered AI assistant</p>
+  </header>
+  <section class="card">
+    <div class="toolbar">
+      <button id="mic" class="primary" type="button">🎙️ Speak</button>
+      <button id="voice" type="button">🔊 Voice: On</button>
+      <button id="clear" type="button">Clear chat</button>
+      <span id="status" class="status">Ready when you are</span>
+    </div>
+    <div id="chat" aria-live="polite">
+      <div class="bubble assistant"><span class="label">Nova</span>Hi! I'm Nova. Tap Speak or type a message below. You can ask me questions, brainstorm ideas, or get help with Python.</div>
+    </div>
+    <form id="form">
+      <input id="message" autocomplete="off" placeholder="Type your message..." aria-label="Your message">
+      <button id="send" class="primary" type="submit">Send ➤</button>
+    </form>
+    <div class="hint">Voice input works in supported browsers. If the microphone is unavailable, use text chat.</div>
+  </section>
+  <p class="small">AI answers may be inaccurate. Do not enter passwords, private keys, or sensitive personal information.<br>AI API usage may cost money depending on your provider account.</p>
+</main>
+<script>
+const chat = document.getElementById('chat');
+const form = document.getElementById('form');
+const input = document.getElementById('message');
+const sendBtn = document.getElementById('send');
+const micBtn = document.getElementById('mic');
+const statusEl = document.getElementById('status');
+const voiceBtn = document.getElementById('voice');
+let history = [];
+let voiceOn = true;
+let recognition = null;
+
+function addBubble(role, text) {
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble ' + role;
+  const label = document.createElement('span');
+  label.className = 'label';
+  label.textContent = role === 'user' ? 'You' : 'Nova';
+  const body = document.createElement('span');
+  body.textContent = text;
+  bubble.append(label, body);
+  chat.appendChild(bubble);
+  chat.scrollTop = chat.scrollHeight;
+}
+function speak(text) {
+  if (!voiceOn || !('speechSynthesis' in window)) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = 1;
+  utterance.pitch = 1;
+  window.speechSynthesis.speak(utterance);
+}
+async function sendMessage(text) {
+  text = (text || '').trim();
+  if (!text) return;
+  addBubble('user', text);
+  input.value = '';
+  sendBtn.disabled = true;
+  micBtn.disabled = true;
+  statusEl.textContent = 'Nova is thinking...';
+  try {
+    const response = await fetch('/chat', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({message:text, history})
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Request failed.');
+    addBubble('assistant', data.answer);
+    history.push({role:'user', content:text}, {role:'assistant', content:data.answer});
+    history = history.slice(-8);
+    speak(data.answer);
+    statusEl.textContent = 'Ready';
+  } catch (err) {
+    addBubble('assistant', 'Sorry — ' + err.message);
+    statusEl.textContent = 'Needs attention';
+  } finally {
+    sendBtn.disabled = false;
+    micBtn.disabled = false;
+    input.focus();
+  }
+}
+form.addEventListener('submit', e => {
+  e.preventDefault();
+  sendMessage(input.value);
+});
+voiceBtn.addEventListener('click', () => {
+  voiceOn = !voiceOn;
+  voiceBtn.textContent = voiceOn ? '🔊 Voice: On' : '🔇 Voice: Off';
+  if (!voiceOn && 'speechSynthesis' in window) window.speechSynthesis.cancel();
+});
+document.getElementById('clear').addEventListener('click', () => {
+  history = [];
+  chat.replaceChildren();
+  addBubble('assistant', 'Chat cleared. What would you like to talk about?');
+});
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (SpeechRecognition) {
+  recognition = new SpeechRecognition();
+  recognition.lang = 'en-IN';
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+  recognition.onstart = () => statusEl.textContent = 'Listening...';
+  recognition.onresult = event => {
+    const transcript = event.results[0][0].transcript;
+    statusEl.textContent = 'Heard you';
+    sendMessage(transcript);
+  };
+  recognition.onerror = event => {
+    statusEl.textContent = 'Mic error: ' + event.error;
+    if (event.error === 'not-allowed') addBubble('assistant', 'Please allow microphone access in your browser, or type your message.');
+  };
+  recognition.onend = () => { micBtn.disabled = false; if (statusEl.textContent === 'Listening...') statusEl.textContent = 'Ready'; };
+  micBtn.addEventListener('click', () => {
+    try { recognition.start(); } catch (e) { statusEl.textContent = 'Microphone is already starting.'; }
+  });
+} else {
+  micBtn.addEventListener('click', () => {
+    addBubble('assistant', 'Speech recognition is not supported by this browser. Try Chrome, or type your message.');
+  });
+}
+</script>
+</body>
+</html>
